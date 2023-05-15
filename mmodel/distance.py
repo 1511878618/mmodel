@@ -28,6 +28,7 @@ def dist_func(q,k):
 
 def get_dist_map(label_name_dict, emb_tensor, device, dtype, dist_func=dist_func,model=None,):
     """
+    label中的name展开后叠在一起的顺序即是返回的dist_map中的顺序
     get the distance map for training, all names vs names distance map
     {name1:{name1:dist1, name2:dist2, ...}, name2:{name1:dist1, name2:dist2, ...}, ...}
     """
@@ -38,22 +39,24 @@ def get_dist_map(label_name_dict, emb_tensor, device, dtype, dist_func=dist_func
     name_label_dict = get_name_label_dict(label_name_dict)
 
     dist_dict = {}
-    for i, name in tqdm(enumerate(name_label_dict.keys())):
+    for i, name in enumerate(name_label_dict.keys()):
         current = emb_tensor[i].unsqueeze(0)
         dist = dist_func(current, emb_tensor).detach().cpu().numpy()
         dist_dict[name] = {name:dist[i] for i, name in enumerate(name_label_dict.keys())}
     return dist_dict 
 
-def compute_esm_distance(dataset):
+def compute_emb_distance(dataset, issave=True):
     ensure_dirs('../data/distance_map/')
     name_label_dict = get_label_name_dict(f"../data/{dataset}.csv")
     use_cuda = torch.cuda.is_available()
     device = torch.device("cuda:0" if use_cuda else "cpu")
     dtype = torch.float32
     emb_tensor = load_embedding(name_label_dict, device, dtype)
-    esm_dist = get_dist_map(name_label_dict, emb_tensor, device, dtype)
-    pickle.dump(esm_dist, open(
-        '../data/distance_map/' + dataset + '.pkl', 'wb'))
-    pickle.dump(emb_tensor, open('../data/distance_map/' +
-                dataset + '_emb.pkl', 'wb'))
- 
+    emb_dist = get_dist_map(name_label_dict, emb_tensor, device, dtype)
+    if issave:
+        pickle.dump(emb_dist, open(
+            '../data/distance_map/' + dataset + '.pkl', 'wb'))
+        pickle.dump(emb_tensor, open('../data/distance_map/' +
+                    dataset + '_emb.pkl', 'wb'))
+    else:
+        return emb_dist, emb_tensor

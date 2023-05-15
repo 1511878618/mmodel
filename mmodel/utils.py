@@ -6,6 +6,9 @@ import pandas as pd
 import random 
 import numpy as np 
 
+"""
+raw data: name, label, seq1, seq2... 列需要
+"""
 
 def seed_everything(seed=1234):
     random.seed(seed)
@@ -21,7 +24,7 @@ def ensure_dirs(path):
         os.makedirs(path)
 
 def load_esm(lookup):
-    esm = torch.load(f"../data/esmdata/{lookup}.pt")
+    esm = torch.load(f"../data/esm_data/{lookup}.pt")
     return esm.unsqueeze(0)  # (1, embeddingDim)
 def load_embedding(label_name_dict, device, dtype, path="../data/esmdata/"):
     """
@@ -35,7 +38,6 @@ def load_embedding(label_name_dict, device, dtype, path="../data/esmdata/"):
     Returns:
         _type_: _description_
     """
-    name_embedding_dict = {}
 
     flatten_list = [load_esm(name) for label, name_list in label_name_dict.items() for name in name_list]  # label1: [name1, name2, name3], label2: [name1, name2, name3] => [name1, name2, name3, name1, name2, name3]
         
@@ -66,5 +68,51 @@ def get_name_label_dict(label_name_dict):
                 name_label_dict[name_current].append(label_current)
 
     return name_label_dict
+
+def fusion(*vec, methods="mean"):
+
+    if methods == "mean":
+        return np.mean(vec, axis=0)
+    elif methods == "sum":
+        return np.sum(vec, axis=0)
+    elif methods == "concat":
+        return np.concatenate(vec, axis=0)
+
+
+def embed_this(filepath, embedder, seq_col=["SLF_seq", "RNase_seq"]):
+    """
+    raw data: name, label, seq1, seq2... 列需要
+    对CSV进行embedding， col，指定序列列名，name_col指定name列名, label_col指定label列
+    返回一个dataframe，包含原始数据，以及embedding
+    """
+    total = pd.read_csv(filepath)
+    for i in seq_col:
+        embeddings = [embedder.reduce_per_protein(embedding) for embedding in embedder.embed_many(total[i])]
+        total[f"{i}_embedding"] = pd.Series(embeddings)
+
+    return total 
+
+def csv_to_fusion_embedding(csvpath, embedder, seq_col=None,name_col=None, methods="mean", savedir=None):
+    """
+    读取csv文件，进行embedding，返回一个dataframe
+    embedder：embedder from BioEmbedding
+    seq_col: list of seq column name
+    name_col: name column name
+    methods: fusion methods, mean, sum, concat,minus
+    savedir: if not None, save the embedding to savedir，推荐data/esmdata 供后续使用，这个是后续训练模型所必须的！，如果仅仅embedding则不用
+    """
+    embed_csv = embed_this(csvpath, embedder, seq_col=seq_col)
+    if savedir:
+        ensure_dirs(savedir)
+    embedding = []
+    for idx, df in embed_csv.iterrows():
+        fusion_tensor = torch.tensor(fusion(*[df[f"{i}_embedding"] for i in seq_col], methods=methods))
+        print(embedding)
+        if savedir:
+            torch.save(fusion_tensor, osp.join(savedir,f"{df[name_col]}.pt"))
+        embedding.append(fusion_tensor.unsqueeze(0))
+    return torch.cat(embedding, dim=0)
+
+
 
 
